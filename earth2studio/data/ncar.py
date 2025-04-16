@@ -103,7 +103,7 @@ class NCAR_ERA5:
         with ctx.Pool(self._n_workers) as p:
             for ename, arr in tqdm(
                 p.imap_unordered(fn, tasks),
-                "Step",
+                "Fetching ERA5",
                 len(tasks),
                 disable=(not self._verbose),
             ):
