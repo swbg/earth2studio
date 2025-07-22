@@ -277,8 +277,8 @@ class CorrelatedSphericalField(torch.nn.Module):
         sigma is the desired variance phi is a np.exp(-dt/time_scale)
         """
         numerator = sigma**2 * (1 - (phi**2))
-        wavenumbers = torch.arange(1, nlat)
-        denominator = (2 * wavenumbers + 1) * torch.exp(
+        wavenumbers = np.arange(1, nlat)
+        denominator = (2 * wavenumbers + 1) * np.exp(
             -kT * wavenumbers * (wavenumbers + 1)
         )
         denominator = 2 * torch.Tensor(denominator).sum()
