@@ -26,7 +26,7 @@ import torch
 import xarray as xr
 from loguru import logger
 from physicsnemo.distributed import DistributedManager
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.data import DataSource, fetch_data
 from earth2studio.io import IOBackend

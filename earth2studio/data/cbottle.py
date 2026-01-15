@@ -23,7 +23,7 @@ import cftime
 import numpy as np
 import torch
 import xarray as xr
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.data.base import DataSource
 from earth2studio.data.utils import datasource_cache_root, prep_data_inputs

@@ -30,7 +30,7 @@ from fsspec.spec import AbstractBufferedFile, AbstractFileSystem
 from fsspec.utils import infer_compression
 from huggingface_hub import HfFileSystem
 from loguru import logger
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.models.auto.ngc import NGCModelFileSystem
 

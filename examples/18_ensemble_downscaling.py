@@ -70,7 +70,7 @@ from math import ceil
 import numpy as np
 import torch
 from loguru import logger
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.data import DataSource, fetch_data
 from earth2studio.io import IOBackend

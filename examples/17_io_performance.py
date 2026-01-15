@@ -102,7 +102,7 @@ import time
 from datetime import datetime, timedelta
 
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.utils.coords import map_coords, split_coords
 from earth2studio.utils.time import to_time_array

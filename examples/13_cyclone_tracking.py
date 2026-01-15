@@ -127,7 +127,7 @@ torch.save(era5_tracks, "outputs/13_era5_paths.pt")
 
 # %%
 
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.utils.coords import map_coords
 

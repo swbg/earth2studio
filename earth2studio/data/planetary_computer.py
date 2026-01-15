@@ -30,7 +30,7 @@ from urllib.parse import urlparse
 import nest_asyncio
 import numpy as np
 import xarray as xr
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.data.utils import datasource_cache_root, prep_data_inputs
 from earth2studio.lexicon.base import LexiconType

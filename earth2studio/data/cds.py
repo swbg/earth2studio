@@ -28,7 +28,7 @@ import numpy as np
 import xarray as xr
 from cfgrib.xarray_to_grib import to_grib
 from loguru import logger
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.data.utils import datasource_cache_root, prep_data_inputs
 from earth2studio.lexicon import CDSLexicon

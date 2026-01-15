@@ -63,7 +63,7 @@ see
 from datetime import datetime, timedelta
 
 from loguru import logger
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 logger.remove()
 logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)

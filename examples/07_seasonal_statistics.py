@@ -76,7 +76,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from loguru import logger
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from earth2studio.data import DataSource, fetch_data
 from earth2studio.io import IOBackend
