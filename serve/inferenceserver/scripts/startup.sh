@@ -15,31 +15,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-echo "Stopping Earth2Studio API Server..."
+set -euo pipefail
 
-# Stop API workers
-echo "Stopping API workers..."
-pkill -f "uvicorn.*earth2studio_api_server.main:app"
-
-# Stop RQ inference workers
-echo "Stopping RQ inference workers..."
-pkill -f "rq.*worker.*inference"
-
-# Stop zip workers (result_zip queue)
-echo "Stopping zip workers..."
-pkill -f "rq.*worker.*result_zip"
-
-# Stop object storage workers
-echo "Stopping object storage workers..."
-pkill -f "rq.*worker.*object_storage"
-
-# Stop finalize metadata workers
-echo "Stopping finalize metadata workers..."
-pkill -f "rq.*worker.*finalize_metadata"
-
-# Stop cleanup daemon
-echo "Stopping cleanup daemon..."
-pkill -f "python.*cleanup_daemon"
-
-echo "All services stopped."
-exit 0
+cd /workspace/earth2studio-project/service/inferenceserver
+make start-redis
+make start-api-server
+sleep infinity
