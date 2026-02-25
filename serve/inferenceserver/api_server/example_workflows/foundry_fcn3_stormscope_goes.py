@@ -16,7 +16,7 @@ from earth2studio.data import (
     PlanetaryComputerGOES,
     fetch_data,
 )
-from earth2studio.io import IOBackend, XarrayBackend, ZarrBackend
+from earth2studio.io import IOBackend, NetCDF4Backend, XarrayBackend, ZarrBackend
 from earth2studio.models.dx import DerivedSurfacePressure
 from earth2studio.models.px import FCN3, DiagnosticWrapper, InterpModAFNO
 from earth2studio.models.px.stormscope import (
@@ -164,6 +164,13 @@ class FoundryFCN3StormScopeGOESWorkflow(Earth2Workflow):
         seeds_fcn3: Sequence[int],
         seeds_stormscope: Sequence[int],
     ) -> None:
+        if isinstance(io, ZarrBackend):
+            io.chunks = {
+                "sample": 1,
+                "time": 1,
+                "variable": 1,
+            }
+
         io.add_array(
             {k: v for k, v in output_coords.items() if k != "variable"},
             output_coords["variable"],
@@ -173,8 +180,10 @@ class FoundryFCN3StormScopeGOESWorkflow(Earth2Workflow):
         sample_coords = {"sample": output_coords["sample"]}
         n_stormscope_per_fcn3 = len(seeds_stormscope) // len(seeds_fcn3)
         tiled_seeds_fcn3 = np.repeat(seeds_fcn3, n_stormscope_per_fcn3)
-        io.add_array(sample_coords, "seed_fcn3", torch.tensor(tiled_seeds_fcn3))
-        io.add_array(sample_coords, "seed_stormscope", torch.tensor(seeds_stormscope))
+        io.add_array(sample_coords, "seed_fcn3", data=torch.tensor(tiled_seeds_fcn3))
+        io.add_array(
+            sample_coords, "seed_stormscope", data=torch.tensor(seeds_stormscope)
+        )
 
         # Set attributes for automatic parsing of dimensions
         io.root["lat"].standard_name = "latitude"
@@ -188,6 +197,12 @@ class FoundryFCN3StormScopeGOESWorkflow(Earth2Workflow):
 
         if isinstance(io, ZarrBackend):
             zarr.consolidate_metadata(io.store)
+
+        if isinstance(io, NetCDF4Backend):
+            # Planetary Computer does not like the original time format
+            ref_time = np.datetime_as_string(output_coords["time"][0], unit="s")
+            io["time"].units = f"hours since {ref_time.replace('T', ' ')}"
+            io["time"][:] = np.arange(len(io["time"]))
 
         return io
 
@@ -357,13 +372,6 @@ class FoundryFCN3StormScopeGOESWorkflow(Earth2Workflow):
         seeds_stormscope: Sequence[int] | None = None,
         variables: Sequence[str] | None = None,
     ) -> None:
-        if isinstance(io, ZarrBackend):
-            io.chunks = {
-                "sample": 1,
-                "time": 1,
-                "variable": 1,
-            }
-
         self.validate_start_times(start_time_stormscope, start_time_fcn3)
         lead_times = np.array([np.timedelta64(i, "h") for i in range(n_steps + 1)])
         # Different StormScope seed for every trajectory
@@ -421,8 +429,3 @@ class FoundryFCN3StormScopeGOESWorkflow(Earth2Workflow):
                     variables=variables,
                 )
                 sample += 1
-
-        # Planetary Computer does not like the original time format
-        ref_time = start_time_stormscope.isoformat().replace("T", " ")
-        io["time"].units = f"hours since {ref_time}"
-        io["time"][:] = np.arange(len(io["time"]))
