@@ -33,18 +33,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import aiofiles  # type: ignore[import-untyped]
-import redis as redis_sync  # type: ignore[import-untyped]  # For RQ (synchronous)
-import redis.asyncio as redis  # type: ignore[import-untyped]
-import uvicorn
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from pydantic import BaseModel, Field
-from rq import Queue
+from earth2studio.utils.imports import OptionalDependencyError
 
-# Import configuration
+try:
+    import aiofiles  # type: ignore[import-untyped]
+    import redis as redis_sync  # type: ignore[import-untyped]  # For RQ (synchronous)
+    import redis.asyncio as redis  # type: ignore[import-untyped]
+    import uvicorn
+    from fastapi import FastAPI, HTTPException, Request
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import Response, StreamingResponse
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+    from pydantic import BaseModel, Field
+    from rq import Queue
+except ImportError as e:
+    raise OptionalDependencyError(
+        "serve", "earth2studio.serve.server.main", e, e.__traceback__
+    )
+
 from earth2studio.serve.server.config import get_config, get_config_manager
 from earth2studio.serve.server.utils import (
     create_file_stream,
@@ -52,8 +58,6 @@ from earth2studio.serve.server.utils import (
     get_inference_request_zip_key,
     parse_range_header,
 )
-
-# Import workflow registry
 from earth2studio.serve.server.workflow import (
     WorkflowResult,
     WorkflowStatus,
@@ -68,12 +72,7 @@ config_manager = get_config_manager()
 config_manager.setup_logging()
 logger = logging.getLogger(__name__)
 
-# FastAPI app will be created after lifespan definition
-
-# Redis client (will be initialized in startup event)
 redis_client: redis.Redis | None = None
-
-# RQ configuration
 redis_sync_client: redis_sync.Redis | None = None
 inference_queue: Queue | None = None
 

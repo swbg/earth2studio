@@ -14,16 +14,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
+from __future__ import annotations
+
 import logging
-from collections.abc import AsyncGenerator
-from pathlib import Path
+
 from typing import Any, Literal
 
-import aiofiles  # type: ignore[import-untyped]
-import redis  # type: ignore[import-untyped]
-from fastapi import HTTPException
-from rq import Queue
+from earth2studio.utils.imports import (
+    OptionalDependencyFailure,
+    check_optional_dependencies,
+)
+
+try:
+    from collections.abc import AsyncGenerator
+    from pathlib import Path
+    import asyncio
+    import redis  # type: ignore[import-untyped]
+    from rq import Queue
+    import aiofiles  # type: ignore[import-untyped]
+    from fastapi import HTTPException
+except ImportError:
+    OptionalDependencyFailure("serve")
+    redis = None
+    Queue = None
+    aiofiles = None
+    HTTPException = None
 
 from earth2studio.serve.server.config import get_config
 
@@ -202,6 +217,7 @@ async def create_file_stream(
 Stage = Literal["inference", "result_zip", "object_storage", "geocatalog_ingestion"]
 
 
+@check_optional_dependencies()
 def queue_next_stage(
     redis_client: redis.Redis,
     current_stage: Stage,
