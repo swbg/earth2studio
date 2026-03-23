@@ -467,7 +467,8 @@ class Earth2StudioClient:
         timeout: float | None = None,
     ) -> io.BytesIO:
         """
-        Download a result file from the server or S3.
+        Download a result file from the server, S3 (CloudFront signed URL), or Azure Blob
+        (DefaultAzureCredential via adlfs).
 
         Parameters
         ----------
@@ -505,6 +506,19 @@ class Earth2StudioClient:
                 )
             path = "/".join(parts[1:])
             content = mapper.fs.cat_file(path)
+            return io.BytesIO(content)
+
+        if result.storage_type == StorageType.AZURE:
+            from earth2studio.serve.client.fsspec_utils import get_mapper
+
+            mapper = get_mapper(result, zarr_path="")
+            parts = path.split("/")
+            if len(parts) < 2:
+                raise Earth2StudioAPIError(
+                    f"Expected Azure result path to include an execution-id prefix, got: {path!r}"
+                )
+            rel_path = "/".join(parts[1:])
+            content = mapper.fs.cat_file(rel_path)
             return io.BytesIO(content)
 
         # Default: download from server

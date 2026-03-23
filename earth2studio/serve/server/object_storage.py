@@ -209,9 +209,9 @@ class MSCObjectStorage(ObjectStorage):
     For S3, credentials are read from environment variables: AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN (optional), AWS_DEFAULT_REGION.
 
-    For Azure, credentials can be provided via:
-    - Connection string (AzureCredentials): Provide azure_connection_string
-    - Managed Identity (DefaultAzureCredentials): Omit azure_connection_string and provide endpoint_url or azure_account_name
+    For Azure Blob Storage, authentication uses DefaultAzureCredentials (managed identity,
+    Azure CLI, etc.). Provide ``endpoint_url`` and/or ``azure_account_name`` to locate the
+    account; do not use connection strings.
 
     References
     ----------
@@ -249,12 +249,8 @@ class MSCObjectStorage(ObjectStorage):
         CloudFront key pair ID for signed URLs.
     cloudfront_private_key : str, optional
         PEM private key content as string for signed URLs.
-    azure_connection_string : str, optional
-        Azure connection string (optional if using managed identity).
     azure_account_name : str, optional
-        Azure storage account name (required if using managed identity without endpoint_url).
-    azure_account_key : str, optional
-        Azure storage account key (optional, for SAS token generation).
+        Azure storage account name (used with managed identity when ``endpoint_url`` is not set).
     azure_container_name : str, optional
         Azure container name.
     """
@@ -276,10 +272,8 @@ class MSCObjectStorage(ObjectStorage):
         cloudfront_domain: str | None = None,
         cloudfront_key_pair_id: str | None = None,
         cloudfront_private_key: str | None = None,
-        # Azure-specific parameters
-        azure_connection_string: str | None = None,
+        # Azure-specific parameters (DefaultAzureCredentials / managed identity)
         azure_account_name: str | None = None,
-        azure_account_key: str | None = None,
         azure_container_name: str | None = None,
     ):
         self.storage_type = storage_type
@@ -323,45 +317,15 @@ class MSCObjectStorage(ObjectStorage):
         # Azure-specific configuration
         elif storage_type == "azure":
             self.azure_container_name = azure_container_name or bucket
-            self.azure_account_key = azure_account_key
 
-            # Determine if using managed identity (DefaultAzureCredentials)
-            # Managed identity is used when connection string is not provided
-            self.use_managed_identity = azure_connection_string is None
-
-            if self.use_managed_identity:
-                # Using managed identity - connection string not needed
-                logger.info(
-                    "Using Azure Managed Identity (DefaultAzureCredentials). "
-                    f"Account: {azure_account_name or 'will be determined from endpoint'}, "
-                    f"Container: {self.azure_container_name}"
-                )
-                self.azure_account_name = azure_account_name
-            else:
-                # Using connection string authentication — azure_connection_string is
-                # guaranteed to be not None here (see use_managed_identity above).
-                if azure_connection_string is None:  # pragma: no cover
-                    raise ObjectStorageError(
-                        "Connection string required for non-managed identity mode"
-                    )
-                # Set Azure connection string
-                os.environ["AZURE_CONNECTION_STRING"] = azure_connection_string
-
-                # Extract account name from connection string if not provided directly
-                if not azure_account_name:
-                    self.azure_account_name = None
-                    # Connection string format: DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...
-                    for part in azure_connection_string.split(";"):
-                        if part.startswith("AccountName="):
-                            self.azure_account_name = part.split("=", 1)[1]
-                            break
-                    if not self.azure_account_name:
-                        raise ObjectStorageError(
-                            "Could not extract account name from connection string. "
-                            "Please provide azure_account_name directly or ensure connection string contains AccountName."
-                        )
-                else:
-                    self.azure_account_name = azure_account_name
+            # Azure Blob: DefaultAzureCredentials (managed identity, Azure CLI, etc.)
+            self.use_managed_identity = True
+            logger.info(
+                "Using Azure DefaultAzureCredentials (managed identity / Azure CLI). "
+                f"Account: {azure_account_name or 'will be determined from endpoint'}, "
+                f"Container: {self.azure_container_name}"
+            )
+            self.azure_account_name = azure_account_name
         else:
             raise ValueError(
                 f"Unsupported storage_type: {storage_type}. Must be 's3' or 'azure'."
@@ -413,43 +377,19 @@ class MSCObjectStorage(ObjectStorage):
             }
         elif storage_type == "azure":
             # Build the Azure storage provider options
-            # Derive endpoint URL from endpoint_url parameter, connection string, or account name
-            azure_endpoint_url = None
+            # Derive endpoint URL from endpoint_url parameter or azure_account_name
+            azure_endpoint_url: str | None = None
 
-            # First, check if endpoint_url was provided directly (for managed identity or custom endpoints)
             if endpoint_url:
                 azure_endpoint_url = endpoint_url.rstrip("/")
-            # Then, try to extract BlobEndpoint directly from connection string
-            elif azure_connection_string:
-                for part in azure_connection_string.split(";"):
-                    if part.startswith("BlobEndpoint="):
-                        azure_endpoint_url = part.split("=", 1)[1].rstrip("/")
-                        break
-
-            # If not found, construct from AccountName and EndpointSuffix
-            if not azure_endpoint_url:
-                account_name = None
-                endpoint_suffix = "core.windows.net"  # Default suffix
-
-                # Extract from connection string
-                if azure_connection_string:
-                    for part in azure_connection_string.split(";"):
-                        if part.startswith("AccountName="):
-                            account_name = part.split("=", 1)[1]
-                        elif part.startswith("EndpointSuffix="):
-                            endpoint_suffix = part.split("=", 1)[1]
-
-                # Fall back to provided account_name if not in connection string
-                if not account_name:
-                    account_name = self.azure_account_name
-
+            else:
+                account_name = self.azure_account_name
+                endpoint_suffix = "core.windows.net"
                 if not account_name:
                     raise ObjectStorageError(
                         "Azure endpoint_url cannot be determined. "
-                        "Please provide endpoint_url, azure_connection_string (with AccountName or BlobEndpoint), "
-                        "or azure_account_name."
+                        "Please provide endpoint_url or azure_account_name (managed identity)."
                     )
-
                 azure_endpoint_url = f"https://{account_name}.blob.{endpoint_suffix}"
                 logger.info(
                     f"Constructed Azure endpoint URL from account name: {azure_endpoint_url}"
@@ -472,23 +412,11 @@ class MSCObjectStorage(ObjectStorage):
                 }
             }
 
-            # Add Azure credentials provider
-            if self.use_managed_identity:
-                # Use DefaultAzureCredentials for managed identity
-                profile_config["profiles"][self.profile_name][
-                    "credentials_provider"
-                ] = {
-                    "type": "DefaultAzureCredentials",
-                    "options": {},
-                }
-            elif azure_connection_string:
-                # Use AzureCredentials with connection string
-                profile_config["profiles"][self.profile_name][
-                    "credentials_provider"
-                ] = {
-                    "type": "AzureCredentials",
-                    "options": {"connection": "${AZURE_CONNECTION_STRING}"},
-                }
+            # DefaultAzureCredentials (managed identity, Azure CLI, etc.)
+            profile_config["profiles"][self.profile_name]["credentials_provider"] = {
+                "type": "DefaultAzureCredentials",
+                "options": {},
+            }
 
         # Initialize the StorageClient (target for uploads)
         storage_client_config = msc.StorageClientConfig.from_dict(
@@ -787,7 +715,7 @@ class MSCObjectStorage(ObjectStorage):
         Generate a signed URL for accessing a file.
 
         For S3, generates a CloudFront signed URL.
-        For Azure, generates a SAS (Shared Access Signature) token URL.
+        Azure blob access is not supported here; clients should obtain tokens to read blobs.
 
         Parameters
         ----------
@@ -808,10 +736,13 @@ class MSCObjectStorage(ObjectStorage):
         """
         if self.storage_type == "s3":
             return self._generate_cloudfront_signed_url(remote_key, expires_in)
-        elif self.storage_type == "azure":
-            return self._generate_azure_sas_url(remote_key, expires_in)
-        else:
-            raise ObjectStorageError(f"Unsupported storage_type: {self.storage_type}")
+        if self.storage_type == "azure":
+            raise ObjectStorageError(
+                "Azure blob signed URLs are not generated by the server. "
+                "Use remote_path / blob_url in metadata and obtain Azure AD or other "
+                "tokens on the client to read objects."
+            )
+        raise ObjectStorageError(f"Unsupported storage_type: {self.storage_type}")
 
     def _generate_cloudfront_signed_url(self, remote_key: str, expires_in: int) -> str:
         """Generate a CloudFront signed URL for S3."""
@@ -866,56 +797,5 @@ class MSCObjectStorage(ObjectStorage):
 
         logger.debug(
             f"Generated CloudFront signed URL for {remote_key}, expires in {expires_in}s"
-        )
-        return signed_url
-
-    def _generate_azure_sas_url(self, remote_key: str, expires_in: int) -> str:
-        """Generate an Azure SAS (Shared Access Signature) URL."""
-        if not self.azure_account_name or not self.azure_account_key:
-            raise ObjectStorageError(
-                "Azure account name and account key are required for signed URLs. "
-                "Please provide azure_account_name and azure_account_key."
-            )
-
-        try:
-            from azure.storage.blob import (
-                ContainerSasPermissions,
-                generate_container_sas,
-            )
-        except ImportError as e:
-            raise ImportError(
-                "azure-storage-blob is required for Azure signed URLs. "
-                "Install with: pip install azure-storage-blob"
-            ) from e
-
-        container_name = (
-            self.azure_container_name if self.storage_type == "azure" else self.bucket
-        )
-
-        # Define permissions (Read + List)
-        permissions = ContainerSasPermissions(read=True, list=True)
-
-        # Set the duration
-        start_time = datetime.datetime.now(datetime.timezone.utc)
-        expiry_time = start_time + datetime.timedelta(seconds=expires_in)
-
-        # Generate the SAS token
-        sas_token = generate_container_sas(
-            account_name=self.azure_account_name,
-            account_key=self.azure_account_key,
-            container_name=container_name,
-            permission=permissions,
-            expiry=expiry_time,
-            start=start_time,
-        )
-
-        # Construct the full URL with the prefix
-        # Remove leading slash from remote_key if present
-        prefix = remote_key.lstrip("/")
-        base_url = f"https://{self.azure_account_name}.blob.core.windows.net/{container_name}/{prefix}"
-        signed_url = f"{base_url}?{sas_token}"
-
-        logger.debug(
-            f"Generated Azure SAS URL for {remote_key}, expires in {expires_in}s"
         )
         return signed_url

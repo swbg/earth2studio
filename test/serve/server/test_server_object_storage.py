@@ -465,62 +465,7 @@ class TestMSCObjectStorageAzure:
             MSCObjectStorage(
                 bucket="mycontainer",
                 storage_type="azure",
-                # no azure_account_name, no endpoint_url, no connection_string
             )
-
-    def test_init_azure_connection_string_extracts_account_name(self, mock_msc):
-        """Azure init with connection string extracts AccountName from it."""
-        conn_str = "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=key123;EndpointSuffix=core.windows.net"
-        storage = MSCObjectStorage(
-            bucket="mycontainer",
-            storage_type="azure",
-            azure_connection_string=conn_str,
-        )
-        assert storage.use_managed_identity is False
-        assert storage.azure_account_name == "myaccount"
-
-    def test_init_azure_connection_string_explicit_account_name(self, mock_msc):
-        """Azure init with connection string uses explicitly provided azure_account_name."""
-        conn_str = "DefaultEndpointsProtocol=https;AccountKey=somekey"
-        storage = MSCObjectStorage(
-            bucket="mycontainer",
-            storage_type="azure",
-            azure_connection_string=conn_str,
-            azure_account_name="explicitaccount",
-        )
-        assert storage.azure_account_name == "explicitaccount"
-
-    def test_init_azure_connection_string_no_account_name_raises(self, mock_msc):
-        """Azure init raises ObjectStorageError when connection string has no AccountName and none provided."""
-        conn_str = "DefaultEndpointsProtocol=https;AccountKey=somekey"
-        with pytest.raises(ObjectStorageError, match="Could not extract account name"):
-            MSCObjectStorage(
-                bucket="mycontainer",
-                storage_type="azure",
-                azure_connection_string=conn_str,
-            )
-
-    def test_init_azure_connection_string_with_blob_endpoint(self, mock_msc):
-        """Azure init uses BlobEndpoint directly from connection string."""
-        conn_str = "BlobEndpoint=https://myaccount.blob.core.windows.net;AccountName=myaccount;AccountKey=key"
-        storage = MSCObjectStorage(
-            bucket="mycontainer",
-            storage_type="azure",
-            azure_connection_string=conn_str,
-        )
-        assert storage.azure_account_name == "myaccount"
-
-    def test_init_azure_connection_string_with_endpoint_suffix(self, mock_msc):
-        """Azure init constructs endpoint URL using EndpointSuffix from connection string."""
-        conn_str = (
-            "AccountName=myaccount;AccountKey=key;EndpointSuffix=core.chinacloudapi.cn"
-        )
-        storage = MSCObjectStorage(
-            bucket="mycontainer",
-            storage_type="azure",
-            azure_connection_string=conn_str,
-        )
-        assert storage.azure_account_name == "myaccount"
 
     def test_upload_directory_azure_destination(self, mock_msc):
         """upload_directory for azure uses azure:// in the destination."""
@@ -542,80 +487,13 @@ class TestMSCObjectStorageAzure:
             assert "azure://" in result.destination
             assert "mycontainer" in result.destination
 
-    def test_generate_signed_url_azure_delegates_to_sas(self, mock_msc):
-        """generate_signed_url for azure delegates to _generate_azure_sas_url."""
+    def test_generate_signed_url_azure_not_supported(self, mock_msc):
+        """generate_signed_url for Azure raises; clients use tokens to read blobs."""
         storage = MSCObjectStorage(
             bucket="mycontainer",
             storage_type="azure",
             azure_account_name="acct",
             endpoint_url="https://acct.blob.core.windows.net",
         )
-        storage._generate_azure_sas_url = MagicMock(return_value="https://sas_url")
-
-        result = storage.generate_signed_url("key.txt")
-
-        assert result == "https://sas_url"
-        storage._generate_azure_sas_url.assert_called_once_with("key.txt", 86400)
-
-    def test_generate_azure_sas_url_missing_credentials_raises(self, mock_msc):
-        """_generate_azure_sas_url raises ObjectStorageError when account key is missing."""
-        storage = MSCObjectStorage(
-            bucket="mycontainer",
-            storage_type="azure",
-            azure_account_name="acct",
-            endpoint_url="https://acct.blob.core.windows.net",
-            # azure_account_key not provided → None
-        )
-        with pytest.raises(
-            ObjectStorageError, match="Azure account name and account key"
-        ):
-            storage._generate_azure_sas_url("key.txt", 3600)
-
-    def test_generate_azure_sas_url_import_error(self, mock_msc):
-        """_generate_azure_sas_url raises ImportError when azure-storage-blob is not installed."""
-        storage = MSCObjectStorage(
-            bucket="mycontainer",
-            storage_type="azure",
-            azure_account_name="acct",
-            azure_account_key="key123",
-            endpoint_url="https://acct.blob.core.windows.net",
-        )
-        with patch.dict(
-            sys.modules,
-            {
-                "azure": MagicMock(),
-                "azure.storage": MagicMock(),
-                "azure.storage.blob": None,
-            },
-        ):
-            with pytest.raises(ImportError, match="azure-storage-blob"):
-                storage._generate_azure_sas_url("key.txt", 3600)
-
-    def test_generate_azure_sas_url_success(self, mock_msc):
-        """_generate_azure_sas_url returns a properly constructed SAS URL."""
-        storage = MSCObjectStorage(
-            bucket="mycontainer",
-            storage_type="azure",
-            azure_account_name="myaccount",
-            azure_account_key="mykey",
-            endpoint_url="https://myaccount.blob.core.windows.net",
-        )
-
-        mock_azure_blob = MagicMock()
-        mock_azure_blob.ContainerSasPermissions.return_value = MagicMock()
-        mock_azure_blob.generate_container_sas.return_value = "sv=2020&sig=abc"
-
-        with patch.dict(
-            sys.modules,
-            {
-                "azure": MagicMock(),
-                "azure.storage": MagicMock(),
-                "azure.storage.blob": mock_azure_blob,
-            },
-        ):
-            url = storage._generate_azure_sas_url("path/to/file", 3600)
-
-        assert "myaccount" in url
-        assert "mycontainer" in url
-        assert "path/to/file" in url
-        assert "sv=2020" in url
+        with pytest.raises(ObjectStorageError, match="not generated by the server"):
+            storage.generate_signed_url("key.txt")

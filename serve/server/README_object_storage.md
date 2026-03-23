@@ -7,19 +7,22 @@ Azure Blob Storage) for storing workflow results in the Earth2Studio Inference S
 
 By default, workflow results are stored locally on the inference server. When object storage is
 enabled, results are automatically uploaded to your chosen cloud storage provider (AWS S3 or
-Azure Blob Storage) and served via signed URLs. This provides:
+Azure Blob Storage). For S3, CloudFront signed URLs can be generated; for Azure, the server
+uploads with managed identity and does **not** issue read URLs—clients obtain tokens to read blobs.
 
 - **Scalability**: Offload storage from the inference server
 - **Performance**: Fast global access via CDN (CloudFront for S3) or direct Azure Blob Storage access
-- **Security**: Time-limited signed URLs for secure access
-- **Seamless Client Experience**: The Python client SDK automatically handles all storage types
+- **Security**: Time-limited CloudFront signed URLs (S3); Azure reads use your own token model
+- **Seamless Client Experience**: The Python client SDK automatically handles S3; Azure may require
+  client-side auth for reads
 
 ## Storage Provider Options
 
 The inference server supports two storage providers:
 
 - **AWS S3**: With optional CloudFront CDN for enhanced performance
-- **Azure Blob Storage**: Direct access with SAS (Shared Access Signature) URLs
+- **Azure Blob Storage**: Uploads via managed identity; clients obtain Azure AD (or other) tokens to
+  read data
 
 ## AWS Prerequisites
 
@@ -54,14 +57,16 @@ Create an Azure Storage Account.
 
 Create a blob container in your storage account.
 
-### 3. Connection String, Account Key
+### 3. Managed identity (or equivalent) for uploads
 
-You will need a connection string to write into the container.
-The account key is required for generating SAS (Shared Access Signature) signed URLs.
+The inference server writes to the container using **DefaultAzureCredential** (e.g. user-assigned
+or system-assigned managed identity). Grant that identity **Storage Blob Data Contributor** (or
+equivalent) on the storage account or container.
 
-### 4. Permissions
+### 4. Client read access
 
-Ensure your Azure credentials have the permissions to write/read into the container.
+Downstream clients that read blobs should use **Azure AD** (or your chosen mechanism) to obtain
+tokens; the server does not generate SAS or other signed read URLs for Azure.
 
 ## Server Configuration
 
@@ -113,12 +118,10 @@ export OBJECT_STORAGE_TYPE=azure
 export OBJECT_STORAGE_BUCKET=your-container-name  # Container name (used as bucket equivalent)
 export OBJECT_STORAGE_PREFIX=outputs  # Optional: prefix for uploaded files
 
-# Azure Credentials (Connection String - Recommended)
-export AZURE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=...;EndpointSuffix=core.windows.net"
-
-# OR Azure Credentials (Account Name and Key - Alternative)
+# Azure: storage account (managed identity / DefaultAzureCredential for uploads)
 export AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
-export AZURE_STORAGE_ACCOUNT_KEY=...  # Required for SAS URL generation
+# Optional: full blob endpoint if not using default *.blob.core.windows.net
+# export OBJECT_STORAGE_ENDPOINT_URL=https://mystorageaccount.blob.core.windows.net
 
 # Optional: Container name (defaults to OBJECT_STORAGE_BUCKET if not set)
 export AZURE_CONTAINER_NAME=workflow-results
@@ -128,8 +131,8 @@ export OBJECT_STORAGE_MAX_CONCURRENCY=16          # Concurrent upload threads
 export OBJECT_STORAGE_MULTIPART_CHUNKSIZE=8388608 # 8MB chunk size
 export OBJECT_STORAGE_USE_RUST_CLIENT=true        # High-performance Rust client
 
-# Signed URL Configuration
-export OBJECT_STORAGE_SIGNED_URL_EXPIRES_IN=3600  # SAS URL expiration in seconds
+# Blob reads: clients obtain Azure AD (or other) tokens independently;
+# the server does not issue SAS/signed read URLs.
 ```
 
 ### YAML Configuration
@@ -166,11 +169,9 @@ object_storage:
   max_concurrency: 16
   multipart_chunksize: 8388608
   use_rust_client: true
-  azure_connection_string: "DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=...;EndpointSuffix=core.windows.net"
-  azure_account_name: mystorageaccount  # Optional if in connection string
-  azure_account_key: ...  # Required for SAS URL generation
+  azure_account_name: mystorageaccount  # Required unless endpoint_url is set
+  endpoint_url: null  # Optional: e.g. https://mystorageaccount.blob.core.windows.net
   azure_container_name: workflow-results  # Optional, defaults to bucket
-  signed_url_expires_in: 3600
 ```
 
 ### Configuration Parameters Reference
@@ -186,7 +187,7 @@ object_storage:
 | `access_key_id` | `OBJECT_STORAGE_ACCESS_KEY_ID` | `null` | AWS access key ID (S3 only) |
 | `secret_access_key` | `OBJECT_STORAGE_SECRET_ACCESS_KEY` | `null` | AWS secret access key (S3 only) |
 | `session_token` | `OBJECT_STORAGE_SESSION_TOKEN` | `null` | AWS session token (S3 only) |
-| `endpoint_url` | `OBJECT_STORAGE_ENDPOINT_URL` | `null` | Custom endpoint (S3-compatible) |
+| `endpoint_url` | `OBJECT_STORAGE_ENDPOINT_URL` | `null` | Custom endpoint (S3-compatible; Azure blob URL when using managed identity) |
 | `use_transfer_acceleration` | `OBJECT_STORAGE_TRANSFER_ACCELERATION` | `true` | Enable S3 Transfer Acceleration (S3 only) |
 | `max_concurrency` | `OBJECT_STORAGE_MAX_CONCURRENCY` | `16` | Max concurrent transfers |
 | `multipart_chunksize` | `OBJECT_STORAGE_MULTIPART_CHUNKSIZE` | `8388608` | Multipart chunk size (bytes) |
@@ -194,11 +195,9 @@ object_storage:
 | `cloudfront_domain` | `CLOUDFRONT_DOMAIN` | `null` | CloudFront distribution domain (S3 only) |
 | `cloudfront_key_pair_id` | `CLOUDFRONT_KEY_PAIR_ID` | `null` | CloudFront key pair ID (S3 only) |
 | `cloudfront_private_key_path` | `CLOUDFRONT_PRIVATE_KEY_PATH` | `null` | Path to private key PEM file (S3 only) |
-| `azure_connection_string` | `AZURE_CONNECTION_STRING` | `null` | Azure connection string (Azure only, recommended) |
-| `azure_account_name` | `AZURE_STORAGE_ACCOUNT_NAME` | `null` | Azure storage account name (Azure only) |
-| `azure_account_key` | `AZURE_STORAGE_ACCOUNT_KEY` | `null` | Azure account key for SAS URLs (Azure only) |
+| `azure_account_name` | `AZURE_STORAGE_ACCOUNT_NAME` | `null` | Azure storage account name (Azure only; uploads use DefaultAzureCredential) |
 | `azure_container_name` | `AZURE_CONTAINER_NAME` | `null` | Azure container name (Azure only, defaults to bucket) |
-| `signed_url_expires_in` | `OBJECT_STORAGE_SIGNED_URL_EXPIRES_IN` | `3600` | Signed URL expiration (seconds) |
+| `signed_url_expires_in` | `OBJECT_STORAGE_SIGNED_URL_EXPIRES_IN` | `3600` | CloudFront signed URL TTL (seconds; S3 only) |
 <!-- markdownlint-enable MD013 -->
 
 ## Result Metadata
@@ -230,9 +229,7 @@ When object storage is enabled, the workflow result metadata includes additional
   "request_id": "exec_1769560728_10ed9d3c",
   "status": "completed",
   "storage_type": "azure",
-  "signed_url":
-    "https://mystorageaccount.blob.core.windows.net/workflow-results/outputs/exec_1769560728_10ed9d3c?sv=2021-06-08&ss=b&srt=co&sp=rl&se=2025-01-01T00:00:00Z&st=2024-12-31T00:00:00Z&spr=https&sig=...",
-  "remote_path": "outputs/exec_1769560728_10ed9d3c",
+  "remote_path": "azure://workflow-results/outputs/exec_1769560728_10ed9d3c",
   "output_files": [
     {"path": "exec_1769560728_10ed9d3c/results.zarr/.zarray", "size": 123},
     {"path": "exec_1769560728_10ed9d3c/results.zarr/t2m/0.0.0", "size": 4567890}
@@ -240,13 +237,16 @@ When object storage is enabled, the workflow result metadata includes additional
 }
 ```
 
+There is no `signed_url` for Azure: use `remote_path` (and optional `blob_url` for GeoCatalog-related
+flows) and authorize reads with your own Azure token flow.
+
 ### Storage Type Values
 
 | Value | Description |
 |-------|-------------|
 | `server` | Results stored locally on the inference server |
 | `s3` | Results stored in S3, accessible via CloudFront signed URL |
-| `azure` | Results stored in Azure Blob Storage, accessible via SAS signed URL |
+| `azure` | Results stored in Azure Blob Storage; reads use client-issued tokens (no server SAS) |
 
 ## Client Usage
 
@@ -284,8 +284,7 @@ for file in request_result.output_files[:5]:
 
 ### Using Signed URLs Directly
 
-For advanced use cases, you can use the signed URL directly. The format differs between
-S3/CloudFront and Azure:
+For advanced use cases, you can use the signed URL directly (S3/CloudFront only).
 
 #### Using CloudFront Signed URLs
 
@@ -307,21 +306,12 @@ file_url = f"{base_url}/{file_path}?{query_params}"
 response = requests.get(file_url)
 ```
 
-#### Using Azure SAS URLs
+#### Azure blob reads
 
-```python
-import requests
-
-# Get the signed URL from the result
-signed_url = request_result.signed_url
-# Example:
-# https://mystorageaccount.blob.core.windows.net/workflow-results/outputs/exec_123?sv=...&sig=...
-
-# Azure SAS URLs already include the full path - append the file path
-file_path = "results.zarr/.zarray"
-file_url = f"{signed_url}/{file_path}" if not signed_url.endswith("/") else f"{signed_url}{file_path}"
-response = requests.get(file_url)
-```
+Use the blob URL from result metadata (or construct it from account, container, and path) and
+request an OAuth token from Azure AD with scope for Storage (e.g. `https://storage.azure.com/.default`),
+then `GET` the blob with `Authorization: Bearer <token>`. The inference server does not return a
+pre-signed Azure URL.
 
 ### Using with Xarray and Zarr
 

@@ -140,11 +140,7 @@ class ObjectStorageConfig:
     # Signed URL settings
     signed_url_expires_in: int = 86400  # Default 24 hours
     # Azure Blob Storage configuration
-    azure_connection_string: str | None = None  # Azure connection string
     azure_account_name: str | None = None  # Azure storage account name
-    azure_account_key: str | None = (
-        None  # Azure storage account key (for SAS token generation)
-    )
     azure_container_name: str | None = (
         None  # Azure container name (falls back to bucket if not set)
     )
@@ -435,17 +431,9 @@ class ConfigManager:
             )
 
         # Azure Blob Storage overrides
-        if os.getenv("AZURE_CONNECTION_STRING"):
-            self._config.object_storage.azure_connection_string = os.getenv(
-                "AZURE_CONNECTION_STRING"
-            )
         if os.getenv("AZURE_STORAGE_ACCOUNT_NAME"):
             self._config.object_storage.azure_account_name = os.getenv(
                 "AZURE_STORAGE_ACCOUNT_NAME"
-            )
-        if os.getenv("AZURE_STORAGE_ACCOUNT_KEY"):
-            self._config.object_storage.azure_account_key = os.getenv(
-                "AZURE_STORAGE_ACCOUNT_KEY"
             )
         if os.getenv("AZURE_CONTAINER_NAME"):
             self._config.object_storage.azure_container_name = os.getenv(

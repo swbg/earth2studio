@@ -632,18 +632,10 @@ def process_object_storage_upload(
                         config.object_storage.cloudfront_private_key
                     )
             elif config.object_storage.storage_type == "azure":
-                # Azure-specific parameters
-                if config.object_storage.azure_connection_string:
-                    storage_kwargs["azure_connection_string"] = (
-                        config.object_storage.azure_connection_string
-                    )
+                # Azure-specific parameters (managed identity via DefaultAzureCredentials)
                 if config.object_storage.azure_account_name:
                     storage_kwargs["azure_account_name"] = (
                         config.object_storage.azure_account_name
-                    )
-                if config.object_storage.azure_account_key:
-                    storage_kwargs["azure_account_key"] = (
-                        config.object_storage.azure_account_key
                     )
                 if config.object_storage.azure_container_name:
                     storage_kwargs["azure_container_name"] = (
@@ -704,25 +696,14 @@ def process_object_storage_upload(
                 f"({upload_result.total_bytes} bytes) to {upload_result.destination}"
             )
 
-            # Generate signed URL if configured
-            # For S3: requires CloudFront configuration
-            # For Azure: requires account_name and account_key
-            can_generate_signed_url = False
-            if storage_type == "s3":
-                can_generate_signed_url = all(
-                    [
-                        config.object_storage.cloudfront_domain,
-                        config.object_storage.cloudfront_key_pair_id,
-                        config.object_storage.cloudfront_private_key,
-                    ]
-                )
-            elif storage_type == "azure":
-                can_generate_signed_url = all(
-                    [
-                        config.object_storage.azure_account_name,
-                        config.object_storage.azure_account_key,
-                    ]
-                )
+            # Generate signed URL for S3 only (CloudFront). Azure: clients obtain tokens to read blobs.
+            can_generate_signed_url = storage_type == "s3" and all(
+                [
+                    config.object_storage.cloudfront_domain,
+                    config.object_storage.cloudfront_key_pair_id,
+                    config.object_storage.cloudfront_private_key,
+                ]
+            )
 
             if not can_generate_signed_url:
                 logger.info(
@@ -770,6 +751,9 @@ def process_object_storage_upload(
                 storage_info["remote_path"] = (
                     f"azure://{container_name}/{remote_prefix}"
                 )
+                azure_account = config.object_storage.azure_account_name
+                if azure_account:
+                    storage_info["azure_account_name"] = azure_account
                 # Build HTTPS blob URL for primary netcdf file (for GeoCatalog ingestion)
                 if (
                     config.object_storage.azure_account_name
@@ -1078,6 +1062,10 @@ def process_finalize_metadata(
                 metadata_dict["remote_path"] = storage_info["remote_path"]
             if storage_info.get("signed_url"):
                 metadata_dict["signed_url"] = storage_info["signed_url"]
+            if storage_info.get("azure_account_name"):
+                metadata_dict["azure_account_name"] = storage_info["azure_account_name"]
+            if storage_info.get("blob_url"):
+                metadata_dict["blob_url"] = storage_info["blob_url"]
         else:
             # No storage info means object storage was skipped or failed
             metadata_dict["storage_type"] = "server"

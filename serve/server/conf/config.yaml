@@ -88,12 +88,10 @@ object_storage:
   cloudfront_domain: null
   cloudfront_key_pair_id: null
   cloudfront_private_key: null  # PEM private key content
-  # Signed URL settings
+  # Signed URL settings (S3 + CloudFront only; not used for Azure blob)
   signed_url_expires_in: 86400  # 24 hours
-  # Azure Blob Storage configuration
-  azure_connection_string: null
+  # Azure Blob Storage (uploads use managed identity; no server-side SAS/signed URLs)
   azure_account_name: null
-  azure_account_key: null
   azure_container_name: null
   azure_geocatalog_url: null  # When set, triggers Planetary Computer ingestion after Azure upload
 

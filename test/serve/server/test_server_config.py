@@ -599,9 +599,7 @@ class TestObjectStorageEnvOverrides:
             "CLOUDFRONT_KEY_PAIR_ID",
             "CLOUDFRONT_PRIVATE_KEY",
             "SIGNED_URL_EXPIRES_IN",
-            "AZURE_CONNECTION_STRING",
             "AZURE_STORAGE_ACCOUNT_NAME",
-            "AZURE_STORAGE_ACCOUNT_KEY",
             "AZURE_CONTAINER_NAME",
             "AZURE_ENDPOINT_URL",
             "AZURE_GEOCATALOG_URL",
@@ -739,26 +737,11 @@ class TestObjectStorageEnvOverrides:
         manager._apply_env_overrides()
         assert manager.config.object_storage.signed_url_expires_in == 3600
 
-    def test_azure_connection_string(self) -> None:
-        manager = self._get_manager()
-        os.environ["AZURE_CONNECTION_STRING"] = "DefaultEndpointsProtocol=https;..."
-        manager._apply_env_overrides()
-        assert (
-            manager.config.object_storage.azure_connection_string
-            == "DefaultEndpointsProtocol=https;..."
-        )
-
     def test_azure_storage_account_name(self) -> None:
         manager = self._get_manager()
         os.environ["AZURE_STORAGE_ACCOUNT_NAME"] = "myaccount"
         manager._apply_env_overrides()
         assert manager.config.object_storage.azure_account_name == "myaccount"
-
-    def test_azure_storage_account_key(self) -> None:
-        manager = self._get_manager()
-        os.environ["AZURE_STORAGE_ACCOUNT_KEY"] = "base64key=="  # noqa: S105
-        manager._apply_env_overrides()
-        assert manager.config.object_storage.azure_account_key == "base64key=="
 
     def test_azure_container_name(self) -> None:
         manager = self._get_manager()

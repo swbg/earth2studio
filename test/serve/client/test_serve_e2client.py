@@ -264,7 +264,8 @@ class TestRemoteEarth2WorkflowResult:
                 output_files=[OutputFile(path="results.zarr", size=2048)],
                 completion_time=datetime.now(),
                 storage_type=StorageType.AZURE,
-                signed_url="https://account.blob.core.windows.net/container/*?sig=abc",
+                remote_path="azure://container/outputs/prefix",
+                azure_account_name="account",
             )
             mock_client.wait_for_completion.return_value = mock_inference_result
 

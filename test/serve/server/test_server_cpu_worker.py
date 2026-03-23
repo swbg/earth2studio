@@ -1755,9 +1755,7 @@ class TestProcessObjectStorageUploadEnabled:
         os_cfg.cloudfront_key_pair_id = None
         os_cfg.cloudfront_private_key = None
         os_cfg.azure_container_name = None
-        os_cfg.azure_connection_string = None
         os_cfg.azure_account_name = None
-        os_cfg.azure_account_key = None
         os_cfg.azure_geocatalog_url = None
         os_cfg.signed_url_expires_in = 3600
         mock_config.redis.retention_ttl = 604800
@@ -2207,7 +2205,7 @@ class TestProcessObjectStorageUploadEnabled:
         assert result.get("success") is False
 
     def test_azure_credentials_added_to_storage_kwargs(self, tmp_path):
-        """Azure-specific kwargs (connection_string, account_name, key, container) are passed."""
+        """Azure-specific kwargs (account_name, container, endpoint_url) are passed for managed identity."""
         output_dir = tmp_path / "out"
         output_dir.mkdir()
 
@@ -2215,9 +2213,8 @@ class TestProcessObjectStorageUploadEnabled:
             storage_type="azure",
             bucket=None,
             azure_container_name="my-container",
-            azure_connection_string="DefaultEndpointsProtocol=https;...",
             azure_account_name="myaccount",
-            azure_account_key="mykey",
+            endpoint_url="https://myaccount.blob.core.windows.net",
         )
         mock_redis = Mock()
         mock_queue = Mock(return_value="job_1")
@@ -2246,11 +2243,9 @@ class TestProcessObjectStorageUploadEnabled:
 
         call_kwargs = mock_storage_cls.call_args[1]
         assert (
-            call_kwargs.get("azure_connection_string")
-            == "DefaultEndpointsProtocol=https;..."
+            call_kwargs.get("endpoint_url") == "https://myaccount.blob.core.windows.net"
         )
         assert call_kwargs.get("azure_account_name") == "myaccount"
-        assert call_kwargs.get("azure_account_key") == "mykey"
         assert call_kwargs.get("azure_container_name") == "my-container"
 
     def test_s3_optional_credentials_added_when_set(self, tmp_path):
