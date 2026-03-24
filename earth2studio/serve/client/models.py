@@ -29,7 +29,6 @@ class StorageType(str, Enum):
 
     SERVER = "server"
     S3 = "s3"
-    AZURE = "azure"
 
 
 class RequestStatus(Enum):
@@ -225,9 +224,6 @@ class InferenceRequestResults:
     execution_time_seconds: float | None = None
     storage_type: StorageType = StorageType.SERVER
     signed_url: str | None = None
-    remote_path: str | None = None
-    azure_account_name: str | None = None
-    blob_url: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "InferenceRequestResults":
@@ -265,9 +261,6 @@ class InferenceRequestResults:
                 data.get("storage_type", StorageType.SERVER.value)
             ),
             signed_url=data.get("signed_url"),
-            remote_path=data.get("remote_path"),
-            azure_account_name=data.get("azure_account_name"),
-            blob_url=data.get("blob_url"),
         )
 
     def result_paths(self) -> list[str]:

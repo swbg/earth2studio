@@ -269,92 +269,6 @@ def create_cloudfront_mapper(signed_url: str, zarr_path: str = "") -> Any:
     return mapper
 
 
-def _parse_azure_remote_path(remote_path: str) -> tuple[str, str]:
-    """
-    Parse ``azure://<container>/<blob_prefix>`` into container name and prefix.
-
-    Parameters
-    ----------
-    remote_path : str
-        URI from result metadata, e.g. ``azure://mycontainer/outputs/wf/exec``.
-
-    Returns
-    -------
-    tuple[str, str]
-        ``(container_name, blob_prefix)`` — prefix may be empty.
-    """
-    if not remote_path.startswith("azure://"):
-        raise ValueError(
-            f"Expected remote_path to start with 'azure://', got {remote_path!r}"
-        )
-    rest = remote_path[len("azure://") :]
-    slash = rest.find("/")
-    if slash == -1:
-        return rest, ""
-    return rest[:slash], rest[slash + 1 :]
-
-
-def _azure_account_name_from_blob_url(blob_url: str) -> str | None:
-    """Return storage account name from ``https://<account>.blob.<host>/...``."""
-    parsed = urlparse(blob_url)
-    host = parsed.netloc
-    if ".blob." not in host:
-        return None
-    return host.split(".blob.", 1)[0]
-
-
-def create_azure_blob_mapper(
-    account_name: str,
-    container_name: str,
-    blob_prefix: str,
-    zarr_path: str = "",
-    credential: Any | None = None,
-) -> Any:
-    """
-    Create an fsspec mapper for Azure Blob Storage using DefaultAzureCredential.
-
-    Assumes the caller's identity (or configured credential chain) may read blobs under
-    ``container_name/blob_prefix``. No SAS or server-issued signed URLs are used.
-
-    Parameters
-    ----------
-    account_name : str
-        Azure storage account name.
-    container_name : str
-        Blob container name.
-    blob_prefix : str
-        Key prefix for uploaded results (no leading slash).
-    zarr_path : str, optional
-        Subpath to the Zarr store under the prefix. Default is "".
-    credential : Any, optional
-        Azure credential, e.g. from ``azure.identity``. Default is DefaultAzureCredential.
-
-    Returns
-    -------
-    fsspec.mapping.FSMap
-        Mapper suitable for ``xarray.open_zarr()``.
-    """
-    try:
-        from adlfs import AzureBlobFileSystem
-        from azure.identity import DefaultAzureCredential
-    except ImportError as e:
-        raise ImportError(
-            "Azure blob access requires 'adlfs' and 'azure-identity'. "
-            "Install with the serve extra or: pip install adlfs azure-identity"
-        ) from e
-
-    if credential is None:
-        credential = DefaultAzureCredential()
-
-    segments = [container_name, blob_prefix.strip("/")]
-    if zarr_path:
-        segments.append(zarr_path.strip("/"))
-    root = "/".join(s for s in segments if s)
-
-    fs = AzureBlobFileSystem(account_name=account_name, credential=credential)
-    return fsspec.mapping.FSMap(root=root, fs=fs, check=False, create=False)
-
-
 def get_mapper(
     request_result: InferenceRequestResults, zarr_path: str = ""
 ) -> Any | None:
@@ -364,45 +278,24 @@ def get_mapper(
     Parameters
     ----------
     request_result : InferenceRequestResults
-        For S3, ``signed_url`` (CloudFront). For Azure, ``remote_path`` (``azure://...``)
-        plus ``azure_account_name`` or ``blob_url`` to resolve the account.
+        Inference result containing storage type and optional signed_url.
     zarr_path : str, optional
         Subpath to the Zarr store within the result. Default is "".
 
     Returns
     -------
     fsspec.mapping.FSMap or None
-        Mapper for S3 (HTTPS signed URL) or Azure (DefaultAzureCredential), or None
-        for SERVER storage.
+        Mapper for S3/signed URL storage, or None for SERVER storage.
 
     Raises
     ------
     ValueError
-        If required fields for the storage type are missing, or storage type is unsupported.
+        If storage type is S3 but signed_url is missing, or storage type is unsupported.
     """
     if request_result.storage_type == StorageType.S3:
         if request_result.signed_url is None:
             raise ValueError("S3 storage type requires a signed URL")
         return create_cloudfront_mapper(request_result.signed_url, zarr_path)
-    elif request_result.storage_type == StorageType.AZURE:
-        if not request_result.remote_path:
-            raise ValueError(
-                "Azure storage type requires remote_path in result metadata"
-            )
-        account = request_result.azure_account_name
-        if not account and request_result.blob_url:
-            account = _azure_account_name_from_blob_url(request_result.blob_url)
-        if not account:
-            raise ValueError(
-                "Azure storage requires azure_account_name or blob_url in result metadata "
-                "to locate the storage account"
-            )
-        container_name, blob_prefix = _parse_azure_remote_path(
-            request_result.remote_path
-        )
-        return create_azure_blob_mapper(
-            account, container_name, blob_prefix, zarr_path=zarr_path
-        )
     elif request_result.storage_type == StorageType.SERVER:
         return None
     else:

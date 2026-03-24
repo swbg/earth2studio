@@ -20,10 +20,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from earth2studio.serve.client import fsspec_utils as fsspec_utils_mod
 from earth2studio.serve.client.fsspec_utils import (
     SignedURLFileSystem,
-    create_azure_blob_mapper,
     create_cloudfront_mapper,
     get_mapper,
 )
@@ -293,53 +291,6 @@ class TestCreateCloudfrontMapper:
         assert fs_arg._base_url.rstrip("/").endswith("bucket")
 
 
-class TestParseAzureRemotePath:
-    """Test _parse_azure_remote_path."""
-
-    def test_container_and_prefix(self) -> None:
-        c, p = fsspec_utils_mod._parse_azure_remote_path(
-            "azure://mycontainer/outputs/wf/exec"
-        )
-        assert c == "mycontainer"
-        assert p == "outputs/wf/exec"
-
-    def test_container_only(self) -> None:
-        c, p = fsspec_utils_mod._parse_azure_remote_path("azure://mycontainer")
-        assert c == "mycontainer"
-        assert p == ""
-
-    def test_invalid_prefix_raises(self) -> None:
-        with pytest.raises(ValueError, match="azure://"):
-            fsspec_utils_mod._parse_azure_remote_path("s3://bucket/key")
-
-
-class TestCreateAzureBlobMapper:
-    """Test create_azure_blob_mapper."""
-
-    def test_builds_fsmap_with_adlfs(self) -> None:
-        mock_fs_inst = Mock()
-        mock_abfs = Mock(return_value=mock_fs_inst)
-        mock_fsmap = Mock()
-        cred = object()
-        with patch("adlfs.AzureBlobFileSystem", mock_abfs):
-            with patch(
-                "earth2studio.serve.client.fsspec_utils.fsspec.mapping.FSMap",
-                mock_fsmap,
-            ):
-                out = create_azure_blob_mapper(
-                    "acct",
-                    "cont",
-                    "prefix/p",
-                    zarr_path="results.zarr",
-                    credential=cred,
-                )
-        mock_abfs.assert_called_once_with(account_name="acct", credential=cred)
-        mock_fsmap.assert_called_once()
-        assert mock_fsmap.call_args[1]["root"] == "cont/prefix/p/results.zarr"
-        assert mock_fsmap.call_args[1]["fs"] is mock_fs_inst
-        assert out is mock_fsmap.return_value
-
-
 class TestGetMapper:
     """Test get_mapper."""
 
@@ -402,99 +353,26 @@ class TestGetMapper:
         with pytest.raises(ValueError, match="S3 storage type requires a signed URL"):
             get_mapper(result)
 
-    def test_get_mapper_azure_with_remote_path_and_account_returns_mapper(self) -> None:
-        """get_mapper with AZURE calls create_azure_blob_mapper with parsed paths."""
-        result = InferenceRequestResults(
-            request_id="r1",
-            status=RequestStatus.COMPLETED,
-            output_files=[],
-            completion_time=datetime.now(),
-            storage_type=StorageType.AZURE,
-            remote_path="azure://mycontainer/outputs/prefix",
-            azure_account_name="myacct",
-        )
-        with patch(
-            "earth2studio.serve.client.fsspec_utils.create_azure_blob_mapper"
-        ) as mock_create:
-            mock_create.return_value = Mock()
-            out = get_mapper(result)
-            assert out is mock_create.return_value
-            mock_create.assert_called_once_with(
-                "myacct",
-                "mycontainer",
-                "outputs/prefix",
-                zarr_path="",
-            )
-
-    def test_get_mapper_azure_with_zarr_path_passes_through(self) -> None:
-        """get_mapper passes zarr_path to create_azure_blob_mapper."""
-        result = InferenceRequestResults(
-            request_id="r1",
-            status=RequestStatus.COMPLETED,
-            output_files=[],
-            completion_time=datetime.now(),
-            storage_type=StorageType.AZURE,
-            remote_path="azure://c/p",
-            azure_account_name="a",
-        )
-        with patch(
-            "earth2studio.serve.client.fsspec_utils.create_azure_blob_mapper"
-        ) as mock_create:
-            mock_create.return_value = Mock()
-            get_mapper(result, zarr_path="results.zarr")
-            mock_create.assert_called_once_with("a", "c", "p", zarr_path="results.zarr")
-
-    def test_get_mapper_azure_account_from_blob_url(self) -> None:
-        """get_mapper resolves account from blob_url when azure_account_name is absent."""
-        result = InferenceRequestResults(
-            request_id="r1",
-            status=RequestStatus.COMPLETED,
-            output_files=[],
-            completion_time=datetime.now(),
-            storage_type=StorageType.AZURE,
-            remote_path="azure://cont/pre",
-            azure_account_name=None,
-            blob_url="https://myacct.blob.core.windows.net/cont/blob.nc",
-        )
-        with patch(
-            "earth2studio.serve.client.fsspec_utils.create_azure_blob_mapper"
-        ) as mock_create:
-            mock_create.return_value = Mock()
-            get_mapper(result)
-            mock_create.assert_called_once_with("myacct", "cont", "pre", zarr_path="")
-
-    def test_get_mapper_azure_without_remote_path_raises(self) -> None:
-        """get_mapper with AZURE and no remote_path raises ValueError."""
-        result = InferenceRequestResults(
-            request_id="r1",
-            status=RequestStatus.COMPLETED,
-            output_files=[],
-            completion_time=datetime.now(),
-            storage_type=StorageType.AZURE,
-            remote_path=None,
-            azure_account_name="x",
-        )
-        with pytest.raises(ValueError, match="remote_path"):
-            get_mapper(result)
-
-    def test_get_mapper_azure_without_account_raises(self) -> None:
-        """get_mapper with AZURE and no way to resolve account raises ValueError."""
-        result = InferenceRequestResults(
-            request_id="r1",
-            status=RequestStatus.COMPLETED,
-            output_files=[],
-            completion_time=datetime.now(),
-            storage_type=StorageType.AZURE,
-            remote_path="azure://c/p",
-            azure_account_name=None,
-            blob_url=None,
-        )
-        with pytest.raises(ValueError, match="azure_account_name or blob_url"):
-            get_mapper(result)
-
     def test_get_mapper_unsupported_storage_raises(self) -> None:
         """get_mapper with unsupported storage type raises ValueError."""
-        mock_result = Mock()
-        mock_result.storage_type = "unsupported_type"
-        with pytest.raises(ValueError, match="Unsupported storage type"):
-            get_mapper(mock_result)
+        result = InferenceRequestResults(
+            request_id="r1",
+            status=RequestStatus.COMPLETED,
+            output_files=[],
+            completion_time=datetime.now(),
+            storage_type=StorageType.SERVER,  # will override via monkeypatch for unsupported
+        )
+        # Use a storage type that doesn't exist in enum by creating a mock with invalid type
+        with patch.object(result, "storage_type", "invalid"):
+            # StorageType.SERVER is enum; "invalid" would be if we had another enum value.
+            # Instead simulate by patching the comparison: get_mapper checks
+            # request_result.storage_type == StorageType.S3 and == StorageType.SERVER.
+            # So unsupported = something that is neither. We need a value that is not
+            # StorageType.S3 and not StorageType.SERVER. StorageType only has SERVER and S3.
+            # So we need to pass something that fails both. E.g. a mock with storage_type
+            # that returns False for both. Or add a fake enum value. Easiest: patch
+            # StorageType to add a third value temporarily, or pass a mock object.
+            mock_result = Mock()
+            mock_result.storage_type = "unsupported_type"
+            with pytest.raises(ValueError, match="Unsupported storage type"):
+                get_mapper(mock_result)
