@@ -203,11 +203,13 @@ class FoundryFCN3StormScopeGOESWorkflow(Earth2Workflow):
         if isinstance(io, ZarrBackend):
             zarr.consolidate_metadata(io.store)
 
-        if isinstance(io, NetCDF4Backend):
+        # Unwrap BackendProgress (serve API) so NetCDF time metadata is updated.
+        nc_io = io if isinstance(io, NetCDF4Backend) else getattr(io, "io", None)
+        if isinstance(nc_io, NetCDF4Backend):
             # Planetary Computer does not like the original time format
             ref_time = np.datetime_as_string(output_coords["time"][0], unit="s")
-            io["time"].units = f"hours since {ref_time.replace('T', ' ')}"
-            io["time"][:] = np.arange(len(io["time"]))
+            nc_io["time"].units = f"hours since {ref_time.replace('T', ' ')}"
+            nc_io["time"][:] = np.arange(len(nc_io["time"]))
 
         return io
 
