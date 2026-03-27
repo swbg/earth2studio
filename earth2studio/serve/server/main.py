@@ -40,7 +40,7 @@ try:
     import redis as redis_sync  # type: ignore[import-untyped]  # For RQ (synchronous)
     import redis.asyncio as redis  # type: ignore[import-untyped]
     import uvicorn
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import Response, StreamingResponse
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -53,10 +53,8 @@ except ImportError as e:
 
 from earth2studio.serve.server.config import get_config, get_config_manager
 from earth2studio.serve.server.utils import (
-    create_file_stream,
     get_inference_request_output_path_key,
     get_inference_request_zip_key,
-    parse_range_header,
 )
 from earth2studio.serve.server.workflow import (
     WorkflowResult,
@@ -833,10 +831,7 @@ async def get_workflow_results(
 
 @app.get("/v1/infer/{workflow_name}/{execution_id}/results/{filepath:path}")
 async def get_workflow_result_file(
-    workflow_name: str,
-    execution_id: str,
-    filepath: str,
-    request: Request,
+    workflow_name: str, execution_id: str, filepath: str
 ) -> StreamingResponse:
     """
     Stream a specific file from the workflow execution results.
@@ -927,32 +922,29 @@ async def get_workflow_result_file(
                     },
                 )
 
-            # Get file size and parse range header
-            zip_file_size = zip_file_path.stat().st_size
-            range_header = request.headers.get("Range")
-            start, end, content_length, status_code = parse_range_header(
-                range_header, zip_file_size
-            )
-
-            # Create streaming response
-            stream_generator = create_file_stream(
-                zip_file_path, start, content_length, "zip file"
-            )
+            # Stream the zip file
+            async def stream_zip_file() -> AsyncGenerator[bytes, None]:
+                """Stream the zip file contents"""
+                try:
+                    chunk_size = 8192
+                    async with aiofiles.open(zip_file_path, "rb") as f:
+                        while True:
+                            chunk = await f.read(chunk_size)
+                            if not chunk:
+                                break
+                            yield chunk
+                            await asyncio.sleep(0)
+                except Exception:
+                    logger.exception(f"Error streaming zip file {zip_file_path}")
+                    raise
 
             headers = {
                 "Content-Disposition": f'attachment; filename="{zip_filename}"',
-                "Content-Length": str(content_length),
-                "Accept-Ranges": "bytes",
+                "Content-Length": str(zip_file_path.stat().st_size),
             }
 
-            if range_header:
-                headers["Content-Range"] = f"bytes {start}-{end}/{zip_file_size}"
-
             return StreamingResponse(
-                stream_generator,
-                media_type="application/zip",
-                headers=headers,
-                status_code=status_code,
+                stream_zip_file(), media_type="application/zip", headers=headers
             )
 
         # Regular case: get file from output directory
@@ -1033,28 +1025,29 @@ async def get_workflow_result_file(
         if media_type is None:
             media_type = "application/octet-stream"
 
-        # Get file size and parse range header
-        file_size = requested_path.stat().st_size
-        range_header = request.headers.get("Range")
-        start, end, content_length, status_code = parse_range_header(
-            range_header, file_size
-        )
-        stream_generator = create_file_stream(
-            requested_path, start, content_length, "file"
-        )
+        # Stream the file
+        async def stream_file() -> AsyncGenerator[bytes, None]:
+            """Stream the file contents"""
+            try:
+                chunk_size = 8192
+                async with aiofiles.open(requested_path, "rb") as f:
+                    while True:
+                        chunk = await f.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+                        await asyncio.sleep(0)
+            except Exception:
+                logger.exception(f"Error streaming file {requested_path}")
+                raise
+
+        # Set appropriate headers
         headers = {
             "Content-Disposition": f'attachment; filename="{requested_path.name}"',
-            "Content-Length": str(content_length),
-            "Accept-Ranges": "bytes",
+            "Content-Length": str(requested_path.stat().st_size),
         }
-        if range_header:
-            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-        return StreamingResponse(
-            stream_generator,
-            media_type=media_type,
-            headers=headers,
-            status_code=status_code,
-        )
+
+        return StreamingResponse(stream_file(), media_type=media_type, headers=headers)
 
     except HTTPException:
         raise
