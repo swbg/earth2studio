@@ -25,6 +25,10 @@ CONFIG_DIR=${CONFIG_DIR:-"${SCRIPT_DIR}/../conf"}
 export SCRIPT_DIR
 export CONFIG_DIR
 export WORKFLOW_DIR
+SERVE_SERVER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SERVE_SERVER_DIR/../.." && pwd)"
+# Repo root for earth2studio; serve/server for azure_planetary_computer.* (geocatalog RQ jobs).
+export PYTHONPATH="${REPO_ROOT}:${REPO_ROOT}/serve/server:${PYTHONPATH:-}"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
 
 # Function to read config values from YAML using Python

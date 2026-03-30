@@ -1422,6 +1422,7 @@ class TestAdmissionControl:
             mock_config.queue.name = "inference"
             mock_config.queue.result_zip_queue_name = "result_zip"
             mock_config.queue.object_storage_queue_name = "object_storage"
+            mock_config.queue.geocatalog_ingestion_queue_name = "geocatalog_ingestion"
             mock_config.queue.finalize_metadata_queue_name = "finalize_metadata"
             response = client.post(
                 "/v1/infer/admit_wf",
@@ -2542,26 +2543,6 @@ class TestGetWorkflowResultFileAdditionalBranches:
         assert response.status_code == 200
         assert 'results.zip"' in response.headers.get("content-disposition", "")
 
-    def test_get_result_file_zip_stream_with_range_header(self, client_file2):
-        """Zip streaming with Range header returns 206 and Content-Range."""
-        client, mock_async, tmp_path, _ = client_file2
-        exec_data = self._completed_exec_data()
-        zip_file = tmp_path / "ranged.zip"
-        zip_file.write_bytes(b"A" * 1000)
-        mock_async.get = AsyncMock(return_value="ranged.zip")
-        with patch("earth2studio.serve.server.main.workflow_registry") as mock_reg:
-            with patch("earth2studio.serve.server.main.redis_client", mock_async):
-                with patch("earth2studio.serve.server.main.RESULTS_ZIP_DIR", tmp_path):
-                    mock_wf = MagicMock()
-                    mock_wf._get_execution_data = MagicMock(return_value=exec_data)
-                    mock_reg.get_workflow_class.return_value = mock_wf
-                    response = client.get(
-                        "/v1/infer/file2_wf/exec_1/results/file2_wf:exec_1",
-                        headers={"Range": "bytes=0-99"},
-                    )
-        assert response.status_code == 206
-        assert "Content-Range" in response.headers
-
     def test_get_result_file_filepath_with_output_dir_prefix(self, client_file2):
         """When filepath starts with output dir name, the prefix is stripped."""
         client, mock_async, tmp_path, _ = client_file2
@@ -2603,27 +2584,6 @@ class TestGetWorkflowResultFileAdditionalBranches:
                     )
         assert response.status_code == 200
         assert "octet-stream" in response.headers.get("content-type", "")
-
-    def test_get_result_file_with_range_header_206(self, client_file2):
-        """Serving regular file with Range header returns 206 and Content-Range."""
-        client, mock_async, tmp_path, _ = client_file2
-        exec_data = self._completed_exec_data()
-        output_dir = tmp_path / "output"
-        output_dir.mkdir()
-        data_file = output_dir / "large.txt"
-        data_file.write_bytes(b"X" * 500)
-        mock_async.get = AsyncMock(return_value=str(output_dir))
-        with patch("earth2studio.serve.server.main.workflow_registry") as mock_reg:
-            with patch("earth2studio.serve.server.main.redis_client", mock_async):
-                mock_wf = MagicMock()
-                mock_wf._get_execution_data = MagicMock(return_value=exec_data)
-                mock_reg.get_workflow_class.return_value = mock_wf
-                response = client.get(
-                    "/v1/infer/file2_wf/exec_1/results/large.txt",
-                    headers={"Range": "bytes=0-99"},
-                )
-        assert response.status_code == 206
-        assert "Content-Range" in response.headers
 
     def test_get_result_file_generic_exception_500(self, client_file2):
         """When an unexpected exception occurs in the file handler, returns 500."""

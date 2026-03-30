@@ -136,9 +136,7 @@ def queue_next_stage(
     elif current_stage == "object_storage":
         if config.object_storage.azure_geocatalog_url:
             next_queue = "geocatalog_ingestion"
-            next_func = (
-                "earth2studio.serve.server.cpu_worker.process_geocatalog_ingestion"
-            )
+            next_func = "azure_planetary_computer.geocatalog_ingestion.process_geocatalog_ingestion"
             args = (workflow_name, execution_id)
         else:
             next_queue = "finalize_metadata"

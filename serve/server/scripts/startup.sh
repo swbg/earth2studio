@@ -29,13 +29,12 @@ fi
 # Use CONFIG_DIR/SCRIPT_DIR from env if set (e.g. in Docker); else resolve from script location
 SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 SERVE_SERVER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$SERVE_SERVER_DIR/../.." && pwd)"
 export SCRIPT_DIR
 export CONFIG_DIR="${CONFIG_DIR:-$SCRIPT_DIR/../conf}"
 export WORKFLOW_DIR="${WORKFLOW_DIR:-}"
 
-# Ensure Python can find earth2studio (including earth2studio.serve.server)
-export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
+# PYTHONPATH (repo root + serve/server for azure_planetary_computer.*) is set in
+# scripts/start_api_server.sh before uvicorn and RQ workers start.
 
 cd "$SERVE_SERVER_DIR"
 make start-redis
