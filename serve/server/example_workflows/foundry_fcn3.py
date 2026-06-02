@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Literal
@@ -28,7 +27,6 @@ from loguru import logger
 
 from earth2studio.data import PlanetaryComputerECMWFOpenDataIFS, fetch_data
 from earth2studio.io import IOBackend, NetCDF4Backend, ZarrBackend
-from earth2studio.models.auto import Package
 from earth2studio.models.dx import DerivedSurfacePressure
 from earth2studio.models.px import FCN3, DiagnosticWrapper, InterpModAFNO
 from earth2studio.serve.server import (
@@ -94,10 +92,7 @@ class FoundryFCN3Workflow(Earth2Workflow):
 
     def load_fcn3(self) -> InterpModAFNO:
         logger.info("Loading FCN3 with InterpModAFNO")
-
-        cache_path = Package.default_cache()
-
-        fcn3_package = Package(os.path.join(cache_path, "fcn3"))
+        fcn3_package = FCN3.load_default_package()
         fcn3 = FCN3.load_model(fcn3_package)
 
         # FCN3 does not output surface pressure, but we can derive it from other variables
@@ -114,7 +109,7 @@ class FoundryFCN3Workflow(Earth2Workflow):
         fcn3_with_sp = DiagnosticWrapper(px_model=fcn3, dx_model=sp_model)
 
         # Add the time interpolation model to go from 6-hourly to hourly
-        interp_package = Package(os.path.join(cache_path, "modafno_interpolation"))
+        interp_package = InterpModAFNO.load_default_package()
         fcn3_with_sp_interp = InterpModAFNO.load_model(
             interp_package, px_model=fcn3_with_sp
         )
